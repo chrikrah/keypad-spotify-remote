@@ -70,7 +70,8 @@ footer {
 #spark { width: 1.125rem; height: 1.125rem; fill: var(--accent); flex: none; }
 #spark[hidden] { display: none; }
 #np-title { min-width: 0; font-size: 1.125rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#np-artist { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* two lines: a station's on-air text ("Fußball - Kulturkampf um 50+1 ...") is longer than a song's artist */
+#np-artist { color: var(--muted); line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .ctl {
   width: 4rem; height: 4rem; border-radius: 50%; border: 0; background: none;
   display: grid; place-items: center; cursor: pointer; flex: none; transition: opacity .2s;

@@ -210,6 +210,7 @@ function followMac() {
     let now;
     try { now = JSON.parse(JSON.parse(e.data).message); } catch { return; }
     if (now.seal) { openSeal(now.seal); return; }
+    if (now.heart) { learnHeart(now.heart); return; }
     if (!now.station) {
       if (external?.kind === "radio") { external = null; mark(); refresh(); }
       return;
@@ -238,6 +239,7 @@ async function refresh() {
     $("np-artist").textContent = (item.artists || (item.show ? [item.show] : [])).map(a => a.name).join(", ");
     const art = image(item.album?.images || item.images);
     if (art) $("np-art").src = art;
+    else $("np-art").removeAttribute("src"); // the note placeholder, never the last station's logo
   }
   setHeart();
   playingContext = s?.context?.uri || playingContext;
@@ -292,6 +294,14 @@ async function addHeart() {
     itemsCache.get(favPlaylist.id).add(uri);
     setHeart();
   }
+}
+
+// The key's long press hearts on the Mac; the page learns the song is in, so the heart disappears
+function learnHeart({ uri, playlist, name }) {
+  if (!uri || !playlist) return;
+  if (!favIds.includes(playlist)) favIds.push(playlist); // the Mac started this year's playlist
+  if (!favPlaylist && (name || "").match(FAVS)?.[1] === YEAR) favPlaylist = { id: playlist }; // no second one on a tap
+  playlistItems(playlist).then(set => { set.add(uri); setHeart(); }).catch(() => null);
 }
 
 // --- Search with an on-screen keyboard (the Hub has none) --------------------------------------------
