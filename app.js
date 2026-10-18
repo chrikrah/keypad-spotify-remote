@@ -6,11 +6,14 @@ history.replaceState(null, "", location.pathname);
 const token = params.get("t"), device = params.get("d"), expires = Number(params.get("e") || 0) * 1000;
 const topic = params.get("n"); // secret ntfy topic: the only way back to the Mac (radio, YouTube, song text)
 const totals = params.get("s"); // "yearMinutes,decadeMinutes,firstDay" from the Mac's play ledger
+// Spotify's own playlists answer 404 to new apps but still play by uri (measured), so the Mac sends their ids,
+// names and covers: {"discover": [[id, name, image]], "focus": [...]}
+const picks = (() => { try { return JSON.parse(params.get("p") || "{}"); } catch { return {}; } })();
 // Ids only: the Mac maps each to its stream or URL, and ignores anything else
 const STATIONS = [
-  ["1live", "1LIVE"], ["euskirchen", "Radio Euskirchen"], ["wdr2", "WDR 2"], ["wdr4", "WDR 4"], ["wdr5", "WDR 5"],
-  ["koeln", "Radio Köln"], ["dlf", "Deutschlandfunk"], ["swr3", "SWR3"], ["bayern3", "Bayern 3"],
-  ["antenne", "Antenne Bayern"], ["bigfm", "bigFM"], ["klassik", "Klassik Radio"],
+  ["1live", "1LIVE"], ["euskirchen", "Euskirchen"], ["wdr2", "WDR 2"], ["wdr4", "WDR 4"], ["wdr5", "WDR 5"],
+  ["koeln", "Köln"], ["dlf", "DLF"], ["swr3", "SWR3"], ["bayern3", "Bayern 3"],
+  ["antenne", "Antenne"], ["bigfm", "bigFM"], ["klassik", "Klassik"],
 ].map(([id, name]) => ({ id, name, kind: "radio", images: [{ url: `stations/${id}.png`, width: 256 }] }));
 const YOUTUBE = [{ id: "great-music", name: "Great Music", kind: "yt", images: [{ url: "youtube/great-music.png", width: 256 }] }];
 const PLAY_ICON = "M8 5v14l11-7z", PAUSE_ICON = "M6 5h4v14H6zm8 0h4v14h-4z";
@@ -82,15 +85,27 @@ function tile(item, onTap, round = false) {
   return b;
 }
 
-function shelf(title, nodes) {
-  if (!nodes.length) return;
+function shelf(title, nodes, parent = $("shelves")) {
+  if (!nodes.length) return null;
   const s = document.createElement("section"), h = document.createElement("h2"), row = document.createElement("div");
   h.textContent = title;
   row.className = "row";
   nodes.forEach(n => row.append(n));
   s.append(h, row);
-  $("shelves").append(s);
+  parent.append(s);
+  return s;
 }
+
+// Two shelves side by side, half the width each (one above the other on a narrow screen)
+function split(left, right) {
+  const box = document.createElement("div");
+  box.className = "split";
+  $("shelves").append(box);
+  [left, right].forEach(([title, nodes]) => shelf(title, nodes, box));
+  if (!box.children.length) box.remove();
+}
+
+const pick = ([id, name, img]) => ({ uri: `spotify:playlist:${id}`, name, images: img ? [{ url: img, width: 300 }] : [] });
 
 function mark() {
   const on = external ? `${external.kind}:${external.id}` : playingContext;
@@ -114,6 +129,8 @@ async function playShuffled(uri, total) {
   if (total > 1) body.offset = { position: Math.floor(Math.random() * total) };
   if (!smartOn && !shuffleOn) await api(`/me/player/shuffle${onMac}&state=true`, { method: "PUT" }).catch(() => null);
   await play(body);
+  // A shuffle sent while the new context loads is dropped (measured), so send it again once it plays
+  await new Promise(r => setTimeout(r, 1500));
   if (!smartOn) await api(`/me/player/shuffle${onMac}&state=true`, { method: "PUT" }).catch(() => null);
 }
 
@@ -381,16 +398,19 @@ $("close-search").addEventListener("click", () => openSearch(false));
   favPlaylist = (favs.find(f => f.year === YEAR) || {}).p || null;
   favIds = favs.map(f => f.p.id);
   shelf("Chris Favorites", favs.map(({ p, year }) => tile({ ...p, name: year }, () => playShuffled(p.uri, playlistTotal(p)))));
-  // 2. Made for you: Spotify blocks its own mixes for new apps, so this is built from his top artists
+  // 2. Discover (his Discover Weekly, Release Radar, Daily Mixes) beside Focus (Spotify's established playlists)
+  const pickTiles = list => (Array.isArray(list) ? list : []).map(pick).map(p => tile(p, () => playShuffled(p.uri, 0)));
+  split(["Discover", pickTiles(picks.discover)], ["Focus", pickTiles(picks.focus)]);
+  // 3. Made for you: built from his top artists
   shelf("Made for you", artists.map(a => tile(a, () => playShuffled(a.uri, 0), true)));
-  // 3. Radio and 4. YouTube play on the Mac through the secret topic
+  // 4. Radio and 5. YouTube play on the Mac through the secret topic
   const onMacTile = item => { const t = tile(item, () => startExternal(item)); t.dataset.uri = `${item.kind}:${item.id}`; return t; };
   if (topic) {
     shelf("Radio", STATIONS.map(onMacTile));
     shelf("YouTube playlists", YOUTUBE.map(onMacTile));
     followMac();
   }
-  // 5. Every other playlist
+  // 6. Every other playlist
   shelf("Your playlists", playlists.filter(p => !FAVS.test(p.name || "")).map(p => tile(p, () => playShuffled(p.uri, playlistTotal(p)))));
   Promise.allSettled(favIds.map(playlistItems)).then(setHeart);
   refresh();

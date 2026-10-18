@@ -23,6 +23,9 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 #stats b { font-size: 1.625rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 h2 { font-size: 1.375rem; font-weight: 700; padding: 0 var(--pad) .5rem; }
 section { margin-bottom: .75rem; }
+.split { display: grid; grid-template-columns: 1fr 1fr; }
+.split section { min-width: 0; }
+.split section + section { border-left: 1px solid var(--raised); }
 
 /* Shelves: a half tile peeks past the right edge so a row reads as scrollable */
 .row {
@@ -94,14 +97,16 @@ footer.idle .ctl { opacity: .4; }
 #results {
   flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 0 var(--pad);
   display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .75rem; align-content: start;
+  /* three whole rows fit above the keyboard; the fade marks that more scroll */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
 }
 .hit {
-  display: flex; align-items: center; gap: .75rem; height: 4rem; border: 0; border-radius: .375rem;
+  display: flex; align-items: center; gap: .75rem; height: 3.5rem; border: 0; border-radius: .375rem;
   background: var(--surface); padding: 0 .75rem 0 0; text-align: left; overflow: hidden; cursor: pointer; min-width: 0;
 }
 .hit:active { background: #2e2e33; }
-.hit img, .hit .ph { width: 4rem; height: 4rem; object-fit: cover; flex: none; background: var(--raised); }
-.hit .round { border-radius: 50%; width: 3.25rem; height: 3.25rem; margin-left: .375rem; }
+.hit img, .hit .ph { width: 3.5rem; height: 3.5rem; object-fit: cover; flex: none; background: var(--raised); }
+.hit .round { border-radius: 50%; width: 2.75rem; height: 2.75rem; margin-left: .375rem; }
 .hit div { min-width: 0; display: flex; flex-direction: column; gap: .125rem; }
 .hit b, .hit span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hit b { font-size: 1.125rem; }
@@ -129,7 +134,11 @@ footer.idle .ctl { opacity: .4; }
 #notice small { display: block; color: var(--muted); font-size: 1.125rem; margin-top: .75rem; }
 
 @media (max-width: 40rem) {
+  .split { grid-template-columns: 1fr; }
+  .split section + section { border-left: 0; }
   :root { --tile: 7.5rem; }
-  footer.idle #prev, footer.idle #next, #prev { display: none; }
+  footer.idle #prev, footer.idle #next { display: none; }
+  footer { gap: .5rem; padding: 0 1rem; }
+  #np-box, .ctl { width: 3.25rem; height: 3.25rem; }
   #results { grid-template-columns: 1fr; }
 }
