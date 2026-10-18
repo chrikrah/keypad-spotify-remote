@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://i.scdn.co https://*.scdn.co https://*.spotifycdn.com; connect-src https://api.spotify.com https://ntfy.sh; base-uri 'none'; form-action 'none'">
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://i.scdn.co https://*.scdn.co https://*.spotifycdn.com; connect-src https://api.spotify.com https://ntfy.sh; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>Spotify remote</title>
 <link rel="stylesheet" href="style.css">
@@ -13,7 +13,11 @@
 <body>
 <main id="shelves">
   <header>
-    <h1 id="greeting">Hello</h1>
+    <dl id="stats" aria-label="Listening time">
+      <div id="st-today" hidden><dt><small></small></dt><dd><b></b></dd></div>
+      <div id="st-year" hidden><dt><small></small></dt><dd><b></b></dd></div>
+      <div id="st-decade" hidden><dt><small></small></dt><dd><b></b></dd></div>
+    </dl>
     <button class="ctl" id="open-search" aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg></button>
   </header>
 </main>
@@ -27,8 +31,8 @@
 </section>
 <footer class="idle">
   <div id="np-box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg><img id="np-art" alt=""></div>
-  <div id="np-text"><div id="np-title">Nothing playing</div><div id="np-artist">Tap a cover to play on the Mac</div></div>
-  <button class="ctl" id="heart" aria-label="Add to this year's favorites" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="heart-icon" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.5 3 5 6.5 5c2 0 3.3 1.1 4 2.3h3c.7-1.2 2-2.3 4-2.3C21 5 23.1 8.5 21.6 11.8 19.5 16.4 12 21 12 21zm0-2.4c2.6-1.7 6.3-4.6 7.8-7.6.9-1.9-.3-4-2.3-4-1.5 0-2.3.9-2.9 2.2h-5.2C8.8 7.9 8 7 6.5 7c-2 0-3.2 2.1-2.3 4 1.5 3 5.2 5.9 7.8 7.6z"/></svg></button>
+  <div id="np-text"><div id="np-title-row"><svg id="spark" hidden viewBox="0 0 24 24" role="img" aria-label="Smart Shuffle suggestion"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg><div id="np-title">Nothing playing</div></div><div id="np-artist">Tap a cover to play on the Mac</div></div>
+  <button class="ctl gone" id="heart" aria-label="Add to this year's favorites"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="heart-icon" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.5 3 5 6.5 5c2 0 3.3 1.1 4 2.3h3c.7-1.2 2-2.3 4-2.3C21 5 23.1 8.5 21.6 11.8 19.5 16.4 12 21 12 21zm0-2.4c2.6-1.7 6.3-4.6 7.8-7.6.9-1.9-.3-4-2.3-4-1.5 0-2.3.9-2.9 2.2h-5.2C8.8 7.9 8 7 6.5 7c-2 0-3.2 2.1-2.3 4 1.5 3 5.2 5.9 7.8 7.6z"/></svg></button>
   <button class="ctl" id="prev" aria-label="Previous"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM9.5 12 19 5v14z"/></svg></button>
   <button class="ctl main" id="toggle" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="toggle-icon" d="M8 5v14l11-7z"/></svg></button>
   <button class="ctl" id="next" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM14.5 12 5 19V5z"/></svg></button>

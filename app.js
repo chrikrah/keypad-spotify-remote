@@ -1,22 +1,27 @@
 "use strict";
-// The access token, the Mac's player id, the expiry and the radio topic arrive in the URL fragment,
-// which the browser never sends to a server. Removed from the address bar at once.
+// The access token, the Mac's player id, the expiry, the Mac topic and the listening totals arrive in the
+// URL fragment, which the browser never sends to a server. Removed from the address bar at once.
 const params = new URLSearchParams(location.hash.slice(1));
 history.replaceState(null, "", location.pathname);
 const token = params.get("t"), device = params.get("d"), expires = Number(params.get("e") || 0) * 1000;
-const topic = params.get("n"); // secret ntfy topic: the only way back to the Mac, used for radio only
+const topic = params.get("n"); // secret ntfy topic: the only way back to the Mac (radio, YouTube, song text)
+const totals = params.get("s"); // "yearMinutes,decadeMinutes,firstDay" from the Mac's play ledger
+// Ids only: the Mac maps each to its stream or URL, and ignores anything else
 const STATIONS = [
-  { id: "1live", name: "1LIVE", sub: "WDR" },
-  { id: "euskirchen", name: "Radio Euskirchen", sub: "Lokal" },
-];
+  ["1live", "1LIVE"], ["euskirchen", "Radio Euskirchen"], ["wdr2", "WDR 2"], ["wdr4", "WDR 4"], ["wdr5", "WDR 5"],
+  ["koeln", "Radio Köln"], ["dlf", "Deutschlandfunk"], ["swr3", "SWR3"], ["bayern3", "Bayern 3"],
+  ["antenne", "Antenne Bayern"], ["bigfm", "bigFM"], ["klassik", "Klassik Radio"],
+].map(([id, name]) => ({ id, name, kind: "radio", images: [{ url: `stations/${id}.png`, width: 256 }] }));
+const YOUTUBE = [{ id: "great-music", name: "Great Music", kind: "yt", images: [{ url: "youtube/great-music.png", width: 256 }] }];
 const PLAY_ICON = "M8 5v14l11-7z", PAUSE_ICON = "M6 5h4v14H6zm8 0h4v14h-4z";
-const HEART_OUT = "M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z";
-const HEART_FULL = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 const FAVS = /^chris favou?rites\s+(\d{4})\b/i;
 const YEAR = String(new Date().getFullYear());
 const $ = id => document.getElementById(id);
-let playingContext = null, currentTrack = null, isPlaying = false, ended = false, radioOn = null;
-let favPlaylist = null, favTracks = new Set();
+let playingContext = null, currentTrack = null, isPlaying = false, ended = false;
+let shuffleOn = false, smartOn = false;
+let external = null; // radio or YouTube playing on the Mac outside Spotify: { kind, id, name }
+let favPlaylist = null, favIds = [];
+const itemsCache = new Map(); // playlist id -> Set of track uris
 
 // --- API -------------------------------------------------------------------------------------------
 
@@ -29,7 +34,7 @@ function notice(text, sub) {
 
 function endSession() {
   ended = true;
-  notice("Session ended", "Tap the Spotify key on the keypad again");
+  notice("Session ended", "Press the Spotify key on the keypad");
 }
 
 async function api(path, opts = {}) {
@@ -38,8 +43,9 @@ async function api(path, opts = {}) {
     ...opts, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
   });
   if (r.status === 401) { endSession(); throw new Error("401"); }
-  if (!r.ok || r.status === 204) return null;
-  return r.json().catch(() => null);
+  if (!r.ok) return null;
+  if (r.status === 204) return {};
+  return r.json().catch(() => ({}));
 }
 
 async function paged(path, max = 500) {
@@ -57,6 +63,9 @@ function image(images) {
   return (list.find(i => (i.width || 0) >= 200) || list[list.length - 1] || {}).url;
 }
 
+const toMac = message => fetch("https://ntfy.sh/" + encodeURIComponent(topic), { method: "POST", body: message });
+const onMac = `?device_id=${encodeURIComponent(device)}`;
+
 // --- Building blocks ---------------------------------------------------------------------------------
 
 function tile(item, onTap, round = false) {
@@ -73,54 +82,96 @@ function tile(item, onTap, round = false) {
   return b;
 }
 
-function shelf(title, nodes, id) {
-  if (!nodes.length) return null;
+function shelf(title, nodes) {
+  if (!nodes.length) return;
   const s = document.createElement("section"), h = document.createElement("h2"), row = document.createElement("div");
-  if (id) s.id = id;
   h.textContent = title;
   row.className = "row";
   nodes.forEach(n => row.append(n));
   s.append(h, row);
   $("shelves").append(s);
-  return s;
 }
 
 function mark() {
-  document.querySelectorAll("[data-uri]").forEach(t => t.classList.toggle("playing", t.dataset.uri === playingContext));
+  const on = external ? `${external.kind}:${external.id}` : playingContext;
+  document.querySelectorAll("[data-uri]").forEach(t => t.classList.toggle("playing", t.dataset.uri === on));
 }
 
 // --- Playback ----------------------------------------------------------------------------------------
 
 async function play(body) {
-  if (radioOn) await radio(null);
-  await api(`/me/player/play?device_id=${encodeURIComponent(device)}`, { method: "PUT", body: JSON.stringify(body) });
+  if (external) await stopExternal();
+  await api(`/me/player/play${onMac}`, { method: "PUT", body: JSON.stringify(body) });
   playingContext = body.context_uri || null;
   mark();
   setTimeout(refresh, 800);
 }
 
-async function radio(station) {
-  if (!topic) return;
-  await fetch("https://ntfy.sh/" + encodeURIComponent(topic), { method: "POST", body: station ? "radio:" + station : "radio:stop" });
-  radioOn = station;
-  document.querySelectorAll(".station").forEach(b => b.classList.toggle("on", b.dataset.station === station));
-  if (station) {
-    const s = STATIONS.find(x => x.id === station);
-    $("np-title").textContent = s.name;
-    $("np-artist").textContent = "Radio on the Mac";
-    $("np-art").removeAttribute("src");
-    $("toggle-icon").setAttribute("d", PAUSE_ICON);
-    document.querySelector("footer").classList.remove("idle");
-    currentTrack = null;
-    setHeart();
-  }
+// Playlists and artists always play shuffled (Christopher, 2026-10-18). Smart Shuffle cannot be switched on
+// through the Web API (measured), so when he has it on in the Spotify app it is left alone, else plain shuffle.
+async function playShuffled(uri, total) {
+  const body = { context_uri: uri };
+  if (total > 1) body.offset = { position: Math.floor(Math.random() * total) };
+  if (!smartOn && !shuffleOn) await api(`/me/player/shuffle${onMac}&state=true`, { method: "PUT" }).catch(() => null);
+  await play(body);
+  if (!smartOn) await api(`/me/player/shuffle${onMac}&state=true`, { method: "PUT" }).catch(() => null);
+}
+
+const playlistTotal = p => p.items?.total ?? p.tracks?.total ?? 0;
+
+function showExternal(item, line) {
+  $("np-title").textContent = item.name;
+  $("np-artist").textContent = line;
+  $("np-art").src = image(item.images);
+  $("toggle-icon").setAttribute("d", item.kind === "radio" ? PAUSE_ICON : PLAY_ICON);
+  $("spark").hidden = true;
+  document.querySelector("footer").classList.remove("idle");
+  currentTrack = null;
+  setHeart();
+}
+
+async function startExternal(item) {
+  if (external?.kind === item.kind && external.id === item.id) { await stopExternal(); refresh(); return; }
+  if (isPlaying) await api(`/me/player/pause${onMac}`, { method: "PUT" }).catch(() => null);
+  isPlaying = false;
+  await toMac(`${item.kind}:${item.id}`);
+  external = item;
+  showExternal(item, item.kind === "radio" ? "Live on the Mac" : "YouTube on the Mac");
+  mark();
+}
+
+async function stopExternal() {
+  if (external?.kind === "radio") await toMac("radio:stop");
+  external = null;
+  mark();
+}
+
+// The Mac reads each station's ICY metadata and posts it to "<topic>-now". Replaying the last hours tells
+// a freshly cast page what already plays.
+function followMac() {
+  const es = new EventSource(`https://ntfy.sh/${encodeURIComponent(topic + "-now")}/sse?since=12h`);
+  es.addEventListener("message", e => {
+    let now;
+    try { now = JSON.parse(JSON.parse(e.data).message); } catch { return; }
+    if (!now.station) {
+      if (external?.kind === "radio") { external = null; mark(); refresh(); }
+      return;
+    }
+    const station = STATIONS.find(s => s.id === now.station);
+    if (!station) return;
+    if (external?.id !== station.id) { external = station; mark(); }
+    showExternal(station, now.title || "Live on the Mac");
+  });
 }
 
 async function refresh() {
-  if (radioOn) return; // the bar shows the station while the radio plays
+  if (external) return; // the bar shows the station or YouTube
   const s = await api("/me/player").catch(() => null);
+  if (external) return; // the Mac reported a station while this call was in flight
   const item = s?.item;
   isPlaying = !!s?.is_playing;
+  shuffleOn = !!s?.shuffle_state;
+  smartOn = !!s?.smart_shuffle;
   $("toggle-icon").setAttribute("d", isPlaying ? PAUSE_ICON : PLAY_ICON);
   document.querySelector("footer").classList.toggle("idle", !item);
   currentTrack = item?.type === "track" ? item.uri : null;
@@ -133,71 +184,93 @@ async function refresh() {
   setHeart();
   playingContext = s?.context?.uri || playingContext;
   mark();
+  markSuggestion(s);
 }
 
-// --- Heart: this year's "Chris Favorites YYYY" -------------------------------------------------------
+// A Smart Shuffle suggestion is a song that is not in the playlist being played. The API has no flag for
+// it, so the page compares against the playlist's own items.
+async function markSuggestion(s) {
+  const ctx = s?.context?.uri || "", id = ctx.startsWith("spotify:playlist:") ? ctx.split(":")[2] : null;
+  const uri = currentTrack;
+  if (!s?.smart_shuffle || !id || !uri) { $("spark").hidden = true; return; }
+  const items = await playlistItems(id).catch(() => null);
+  if (uri === currentTrack) $("spark").hidden = !items || items.has(uri);
+}
+
+// --- Heart: only for a song in none of the "Chris Favorites YYYY" ------------------------------------
+
+async function playlistItems(id) {
+  if (itemsCache.has(id)) return itemsCache.get(id);
+  const set = new Set();
+  for (let offset = 0; offset < 5000; offset += 100) {
+    // Spotify retired /tracks for new apps (403); /items nests the track under "item"
+    const r = await api(`/playlists/${id}/items?limit=100&offset=${offset}`);
+    if (!r) throw new Error("items");
+    (r.items || []).forEach(i => i?.item?.uri && set.add(i.item.uri));
+    if (!r.next) break;
+  }
+  itemsCache.set(id, set);
+  return set;
+}
+
+const inFavorites = uri => favIds.some(id => itemsCache.get(id)?.has(uri));
+const favoritesLoaded = () => favIds.every(id => itemsCache.has(id));
 
 function setHeart() {
-  const on = !!currentTrack && favTracks.has(currentTrack);
-  $("heart-icon").setAttribute("d", on ? HEART_FULL : HEART_OUT);
-  $("heart").classList.toggle("on", on);
-  $("heart").setAttribute("aria-pressed", String(on));
-  $("heart").disabled = !currentTrack;
+  $("heart").classList.toggle("gone", !currentTrack || !favoritesLoaded() || inFavorites(currentTrack));
 }
 
-async function loadFavTracks(playlist) {
-  favTracks = new Set();
-  if (!playlist) return;
-  for (let offset = 0; offset < 2000; offset += 100) {
-    // Spotify retired /tracks for new apps (403); /items nests the track under "item"
-    const r = await api(`/playlists/${playlist.id}/items?limit=100&offset=${offset}`);
-    (r?.items || []).forEach(i => i?.item?.uri && favTracks.add(i.item.uri));
-    if (!r?.next) break;
-  }
-}
-
-async function toggleHeart() {
-  if (!currentTrack) return;
+async function addHeart() {
+  const uri = currentTrack;
+  if (!uri || inFavorites(uri)) return;
   if (!favPlaylist) { // first heart of a new year: start this year's playlist
     const body = JSON.stringify({ name: `Chris Favorites ${YEAR}`, public: false });
     favPlaylist = await api("/me/playlists", { method: "POST", body });
-    if (!favPlaylist) {
-      const me = await api("/me");
-      favPlaylist = await api(`/users/${encodeURIComponent(me.id)}/playlists`, { method: "POST", body });
-    }
-    if (!favPlaylist) return;
+    if (!favPlaylist?.id) { favPlaylist = null; return; }
+    favIds.push(favPlaylist.id);
+    itemsCache.set(favPlaylist.id, new Set());
   }
-  const uri = currentTrack, has = favTracks.has(uri);
-  await api(`/playlists/${favPlaylist.id}/items`, has
-    ? { method: "DELETE", body: JSON.stringify({ items: [{ uri }] }) }
-    : { method: "POST", body: JSON.stringify({ uris: [uri] }) });
-  has ? favTracks.delete(uri) : favTracks.add(uri);
-  setHeart();
+  if (await api(`/playlists/${favPlaylist.id}/items`, { method: "POST", body: JSON.stringify({ uris: [uri] }) })) {
+    itemsCache.get(favPlaylist.id).add(uri);
+    setHeart();
+  }
 }
 
 // --- Search with an on-screen keyboard (the Hub has none) --------------------------------------------
 
 const KEYS = ["1234567890", "qwertzuiopü", "asdfghjklöä", "yxcvbnmß"];
+const BACKSPACE = "M22 5v14H8l-6-7 6-7zm-2 2H8.9l-4.3 5 4.3 5H20zm-9.4 2.4L12 8l2.5 2.5L17 8l1.4 1.4-2.5 2.6 2.5 2.5L17 16l-2.5-2.5L12 16l-1.4-1.4 2.5-2.6z";
 let query = "", searchTimer = null;
 
 function buildKeyboard() {
   const kb = $("keyboard");
-  KEYS.forEach(row => {
+  KEYS.forEach((row, i) => {
     const r = document.createElement("div");
     r.className = "krow";
     [...row].forEach(ch => r.append(key(ch, () => type(query + ch))));
+    if (i === KEYS.length - 1) r.append(key(icon(BACKSPACE, "Delete"), () => type(query.slice(0, -1)), "wide"));
     kb.append(r);
   });
   const last = document.createElement("div");
   last.className = "krow";
-  last.append(key("Clear", () => type(""), "wide"), key("Space", () => type(query + " "), "space"), key("⌫", () => type(query.slice(0, -1)), "wide"));
+  last.append(key("Clear", () => type(""), "wide"), key("Space", () => type(query + " "), "space"));
   kb.append(last);
+}
+
+function icon(d, label) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS(svg.namespaceURI, "path");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", label);
+  p.setAttribute("d", d);
+  svg.append(p);
+  return svg;
 }
 
 function key(label, onTap, cls = "") {
   const b = document.createElement("button");
   b.className = "key " + cls;
-  b.textContent = label;
+  b.append(label);
   b.addEventListener("click", onTap);
   return b;
 }
@@ -210,7 +283,7 @@ function type(q) {
   searchTimer = setTimeout(search, 350);
 }
 
-function hit(kind, item, images, sub, body) {
+function hit(kind, item, images, sub, onTap) {
   const b = document.createElement("button");
   b.className = "hit";
   const src = image(images);
@@ -222,7 +295,7 @@ function hit(kind, item, images, sub, body) {
   s.textContent = sub ? `${kind} · ${sub}` : kind;
   text.append(t, s);
   b.append(art, text);
-  b.addEventListener("click", () => { openSearch(false); play(body); });
+  b.addEventListener("click", () => { openSearch(false); onTap(); });
   return b;
 }
 
@@ -235,10 +308,13 @@ async function search() {
   const names = list => (list || []).map(a => a.name).join(", ");
   const ok = list => (list || []).filter(Boolean);
   res.replaceChildren(
-    ...ok(r.tracks?.items).map(t => hit("Song", t, t.album?.images, names(t.artists), { uris: [t.uri] })),
-    ...ok(r.artists?.items).slice(0, 4).map(a => hit("Artist", a, a.images, "", { context_uri: a.uri })),
-    ...ok(r.playlists?.items).slice(0, 4).map(p => hit("Playlist", p, p.images, p.owner?.display_name, { context_uri: p.uri })),
-    ...ok(r.albums?.items).slice(0, 4).map(a => hit("Album", a, a.images, names(a.artists), { context_uri: a.uri })),
+    // A bare track uri answers 204 and plays nothing on the Mac app (measured); its album with an offset plays
+    ...ok(r.tracks?.items).map(t => hit("Song", t, t.album?.images, names(t.artists),
+      () => play({ context_uri: t.album.uri, offset: { uri: t.uri } }))),
+    ...ok(r.artists?.items).slice(0, 4).map(a => hit("Artist", a, a.images, "", () => playShuffled(a.uri, 0))),
+    ...ok(r.playlists?.items).slice(0, 4).map(p => hit("Playlist", p, p.images, p.owner?.display_name,
+      () => playShuffled(p.uri, playlistTotal(p)))),
+    ...ok(r.albums?.items).slice(0, 4).map(a => hit("Album", a, a.images, names(a.artists), () => play({ context_uri: a.uri }))),
   );
 }
 
@@ -247,28 +323,53 @@ function openSearch(open) {
   if (open) type(query);
 }
 
-// --- Page ----------------------------------------------------------------------------------------------
+// --- Listening stats: today live from recently-played, the totals from the Mac's ledger ----------------
 
-function greet() {
-  const h = new Date().getHours();
-  $("greeting").textContent = h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+function hours(min) {
+  if (min < 60) return `${min} min`;
+  if (min < 600) return `${Math.floor(min / 60)} h ${min % 60} min`;
+  return `${Math.round(min / 60).toLocaleString("en")} h`;
 }
 
+function stat(id, label, value) {
+  $(id).hidden = value == null;
+  if (value == null) return;
+  $(id).querySelector("small").textContent = label;
+  $(id).querySelector("b").textContent = value;
+}
+
+async function stats() {
+  const midnight = new Date().setHours(0, 0, 0, 0);
+  const r = await api("/me/player/recently-played?limit=50").catch(() => null);
+  const ms = (r?.items || []).filter(i => Date.parse(i.played_at) >= midnight).reduce((a, i) => a + (i.track?.duration_ms || 0), 0);
+  stat("st-today", "Today", hours(Math.round(ms / 60000)));
+  if (!totals) return;
+  const [year, decade, since] = totals.split(",");
+  const first = new Date(since + "T00:00"), thisYear = Number(YEAR);
+  const label = first.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(first.getFullYear() < thisYear && { year: "numeric" }) });
+  // Honest labels: until the Spotify export is imported, the ledger starts days ago, not on 1 January
+  stat("st-year", first > new Date(thisYear, 0, 1) ? `Since ${label}` : YEAR, hours(Number(year)));
+  const decadeKnown = first.getFullYear() < thisYear;
+  stat("st-decade", first > new Date(thisYear - 9, 0, 1) ? `Since ${label}` : "10 years", decadeKnown ? hours(Number(decade)) : null);
+}
+
+// --- Page ----------------------------------------------------------------------------------------------
+
 $("toggle").addEventListener("click", async () => {
-  if (radioOn) { await radio(null); setTimeout(refresh, 500); return; }
-  await api(`/me/player/${isPlaying ? "pause" : "play"}?device_id=${encodeURIComponent(device)}`, { method: "PUT" });
+  if (external) { await stopExternal(); setTimeout(refresh, 500); return; }
+  await api(`/me/player/${isPlaying ? "pause" : "play"}${onMac}`, { method: "PUT" });
   setTimeout(refresh, 500);
 });
 $("next").addEventListener("click", async () => { await api("/me/player/next", { method: "POST" }); setTimeout(refresh, 600); });
 $("prev").addEventListener("click", async () => { await api("/me/player/previous", { method: "POST" }); setTimeout(refresh, 600); });
-$("heart").addEventListener("click", toggleHeart);
+$("heart").addEventListener("click", addHeart);
 $("open-search").addEventListener("click", () => openSearch(true));
 $("close-search").addEventListener("click", () => openSearch(false));
 
 (async () => {
-  if (!token || !device) { notice("Open this from the keypad", "Tap the Spotify key"); return; }
-  greet();
+  if (!token || !device) { notice("Open this from the keypad", "Press the Spotify key"); return; }
   buildKeyboard();
+  stats();
   const [playlists, artists] = await Promise.all([
     paged("/me/playlists").catch(() => []),
     api("/me/top/artists?limit=20&time_range=medium_term").then(r => r?.items || []).catch(() => []),
@@ -278,30 +379,21 @@ $("close-search").addEventListener("click", () => openSearch(false));
     .map(p => ({ p, year: p.name.match(FAVS)[1] }))
     .sort((a, b) => b.year.localeCompare(a.year));
   favPlaylist = (favs.find(f => f.year === YEAR) || {}).p || null;
-  shelf("Chris Favorites", favs.map(({ p, year }) => tile({ ...p, name: year }, () => play({ context_uri: p.uri }))));
+  favIds = favs.map(f => f.p.id);
+  shelf("Chris Favorites", favs.map(({ p, year }) => tile({ ...p, name: year }, () => playShuffled(p.uri, playlistTotal(p)))));
   // 2. Made for you: Spotify blocks its own mixes for new apps, so this is built from his top artists
-  shelf("Made for you", artists.map(a => tile(a, () => play({ context_uri: a.uri }), true)));
-  // 3. Radio: played on the Mac through the secret topic; stations are ids, never URLs
+  shelf("Made for you", artists.map(a => tile(a, () => playShuffled(a.uri, 0), true)));
+  // 3. Radio and 4. YouTube play on the Mac through the secret topic
+  const onMacTile = item => { const t = tile(item, () => startExternal(item)); t.dataset.uri = `${item.kind}:${item.id}`; return t; };
   if (topic) {
-    shelf("Radio", STATIONS.map(s => {
-      const b = document.createElement("button");
-      b.className = "station";
-      b.dataset.station = s.id;
-      const n = document.createElement("b"), sub = document.createElement("span");
-      n.textContent = s.name; sub.textContent = s.sub;
-      b.append(n, sub);
-      b.addEventListener("click", async () => {
-        if (radioOn === s.id) { await radio(null); return; }
-        if (isPlaying) await api(`/me/player/pause?device_id=${encodeURIComponent(device)}`, { method: "PUT" }).catch(() => null);
-        isPlaying = false;
-        await radio(s.id);
-      });
-      return b;
-    }));
+    shelf("Radio", STATIONS.map(onMacTile));
+    shelf("YouTube playlists", YOUTUBE.map(onMacTile));
+    followMac();
   }
-  // 4. Every other playlist
-  shelf("Your playlists", playlists.filter(p => !FAVS.test(p.name || "")).map(p => tile(p, () => play({ context_uri: p.uri }))));
-  loadFavTracks(favPlaylist).then(setHeart).catch(() => null);
+  // 5. Every other playlist
+  shelf("Your playlists", playlists.filter(p => !FAVS.test(p.name || "")).map(p => tile(p, () => playShuffled(p.uri, playlistTotal(p)))));
+  Promise.allSettled(favIds.map(playlistItems)).then(setHeart);
   refresh();
   const timer = setInterval(() => (ended ? clearInterval(timer) : refresh()), 5000);
+  const statTimer = setInterval(() => (ended ? clearInterval(statTimer) : stats()), 5 * 60000);
 })();

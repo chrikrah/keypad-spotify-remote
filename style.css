@@ -14,7 +14,13 @@ main {
 }
 main::-webkit-scrollbar, .row::-webkit-scrollbar, #results::-webkit-scrollbar { display: none; }
 header { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--pad) .5rem; }
-h1 { font-size: 1.75rem; font-weight: 800; }
+/* Listening time instead of a greeting: label small and muted, the number carries the weight */
+#stats { display: flex; gap: 2.5rem; }
+#stats div { display: flex; flex-direction: column; gap: .125rem; }
+#stats div[hidden] { display: none; }
+#stats dd { margin: 0; }
+#stats small { font-size: .9375rem; color: var(--muted); }
+#stats b { font-size: 1.625rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 h2 { font-size: 1.375rem; font-weight: 700; padding: 0 var(--pad) .5rem; }
 section { margin-bottom: .75rem; }
 
@@ -40,19 +46,6 @@ section { margin-bottom: .75rem; }
 }
 .playing img { outline: .1875rem solid var(--accent); outline-offset: -.1875rem; }
 
-/* Radio tiles sit in a shelf like covers, at cover height */
-.station {
-  flex: 0 0 13rem; height: var(--tile); border: 0; border-radius: .5rem; padding: 1rem; text-align: left;
-  cursor: pointer; display: flex; flex-direction: column; justify-content: flex-end; gap: .25rem;
-  scroll-snap-align: start;
-}
-.station b { font-size: 1.625rem; font-weight: 800; line-height: 1.1; }
-.station span { font-size: 1rem; opacity: .8; }
-.station:active { transform: scale(.97); }
-.station[data-station="1live"] { background: #ffe600; color: #000; }
-.station[data-station="euskirchen"] { background: #0b4ea2; color: #fff; }
-.station.on { outline: .25rem solid var(--accent); outline-offset: -.25rem; }
-
 /* Now playing */
 footer {
   position: fixed; inset: auto 0 0 0; height: var(--bar); background: var(--surface);
@@ -66,7 +59,10 @@ footer {
 #np-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 #np-art:not([src]) { display: none; }
 #np-text { flex: 1; min-width: 0; padding-left: .25rem; }
-#np-title { font-size: 1.125rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#np-title-row { display: flex; align-items: center; gap: .375rem; min-width: 0; }
+#spark { width: 1.125rem; height: 1.125rem; fill: var(--accent); flex: none; }
+#spark[hidden] { display: none; }
+#np-title { min-width: 0; font-size: 1.125rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #np-artist { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctl {
   width: 4rem; height: 4rem; border-radius: 50%; border: 0; background: none;
@@ -75,10 +71,10 @@ footer {
 .ctl:active { background: #2e2e33; }
 .ctl.main { background: var(--accent); color: #000; }
 .ctl svg { width: 1.75rem; height: 1.75rem; fill: currentColor; }
-#heart.on { color: var(--accent); }
+#heart.gone { visibility: hidden; } /* keeps its slot: the controls never jump */
 .ctl:disabled { opacity: .25; }
 footer.idle .ctl { opacity: .4; }
-.ctl:focus-visible, .tile:focus-visible, .station:focus-visible, .key:focus-visible {
+.ctl:focus-visible, .tile:focus-visible, .key:focus-visible {
   outline: .1875rem solid var(--accent); outline-offset: .1875rem;
 }
 
@@ -110,15 +106,20 @@ footer.idle .ctl { opacity: .4; }
 .hit b, .hit span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hit b { font-size: 1.125rem; }
 .hit span { color: var(--muted); font-size: .9375rem; }
-#keyboard { padding: .5rem var(--pad) 0; display: flex; flex-direction: column; gap: .375rem; }
-.krow { display: flex; gap: .375rem; justify-content: center; }
+/* Keys big enough to hit without looking twice: one width for every letter, 52 px high */
+#keyboard {
+  --kgap: .5rem; --k: calc((100% - 10 * var(--kgap)) / 11);
+  padding: .5rem var(--pad) 0; display: flex; flex-direction: column; gap: var(--kgap);
+}
+.krow { display: flex; gap: var(--kgap); justify-content: center; }
 .key {
-  flex: 1; max-width: 4.5rem; height: 2.5rem; border: 0; border-radius: .375rem; background: var(--raised);
-  font-size: 1.25rem; font-weight: 600; cursor: pointer;
+  flex: 0 0 var(--k); height: 3.25rem; border: 0; border-radius: .5rem; background: var(--raised);
+  font-size: 1.5rem; font-weight: 600; cursor: pointer; display: grid; place-items: center; padding: 0;
 }
 .key:active { background: #3a3a40; }
-.key.wide { max-width: 7rem; }
-.key.space { max-width: 22rem; flex: 4; }
+.key.wide { flex-basis: calc(2 * var(--k) + var(--kgap)); font-size: 1.125rem; }
+.key.space { flex-basis: calc(6 * var(--k) + 5 * var(--kgap)); font-size: 1.125rem; }
+.key svg { width: 1.75rem; height: 1.75rem; fill: currentColor; }
 
 #notice {
   position: fixed; inset: 0; display: none; place-items: center; align-content: center; text-align: center;
@@ -129,7 +130,6 @@ footer.idle .ctl { opacity: .4; }
 
 @media (max-width: 40rem) {
   :root { --tile: 7.5rem; }
-  footer.idle #prev, footer.idle #next, footer.idle #heart { display: none; }
+  footer.idle #prev, footer.idle #next, #prev { display: none; }
   #results { grid-template-columns: 1fr; }
-  .station { flex-basis: 10rem; }
 }
