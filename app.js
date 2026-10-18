@@ -3,7 +3,11 @@
 // URL fragment, which the browser never sends to a server. Removed from the address bar at once.
 const params = new URLSearchParams(location.hash.slice(1));
 history.replaceState(null, "", location.pathname);
-const token = params.get("t"), device = params.get("d"), expires = Number(params.get("e") || 0) * 1000;
+let token = params.get("t"), expires = Number(params.get("e") || 0) * 1000;
+const device = params.get("d");
+// While music plays the Mac sends a fresh token before this one runs out, AES-GCM sealed with this key,
+// so the ntfy topic only ever carries ciphertext
+const sealKey = params.get("k") ? crypto.subtle.importKey("raw", b64(params.get("k")), "AES-GCM", false, ["decrypt"]) : null;
 const topic = params.get("n"); // secret ntfy topic: the only way back to the Mac (radio, YouTube, song text)
 const totals = params.get("s"); // "yearMinutes,decadeMinutes,firstDay" from the Mac's play ledger
 // Spotify's own playlists answer 404 to new apps but still play by uri (measured), so the Mac sends their uris,
@@ -43,9 +47,26 @@ function notice(text, sub) {
   n.classList.add("show");
 }
 
+function b64(text) {
+  return Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+}
+
+async function openSeal(sealed) {
+  if (!sealKey) return;
+  const raw = b64(sealed);
+  try {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12) }, await sealKey, raw.slice(12));
+    const next = JSON.parse(new TextDecoder().decode(plain));
+    if (next.e * 1000 > expires) { token = next.t; expires = next.e * 1000; }
+  } catch { /* sealed for an earlier cast */ }
+}
+
+// The Mac quits the page, so the Hub shows its clock and photos again. Text only when the Mac does not answer.
 function endSession() {
+  if (ended) return;
   ended = true;
-  notice("Session ended", "Press the Spotify key on the keypad");
+  if (topic) toMac("hub:quit").catch(() => {});
+  setTimeout(() => notice("Session ended", "Press the Spotify key on the keypad"), topic ? 15000 : 0);
 }
 
 async function api(path, opts = {}) {
@@ -188,6 +209,7 @@ function followMac() {
   es.addEventListener("message", e => {
     let now;
     try { now = JSON.parse(JSON.parse(e.data).message); } catch { return; }
+    if (now.seal) { openSeal(now.seal); return; }
     if (!now.station) {
       if (external?.kind === "radio") { external = null; mark(); refresh(); }
       return;
