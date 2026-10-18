@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://i.scdn.co https://*.scdn.co https://*.spotifycdn.com; connect-src https://api.spotify.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Spotify remote</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main id="shelves"></main>
+<footer class="idle">
+  <div id="np-box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg><img id="np-art" alt=""></div>
+  <div id="np-text"><div id="np-title">Nothing playing</div><div id="np-artist">Tap a cover to play on the Mac</div></div>
+  <button class="ctl" id="prev" aria-label="Previous"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM9.5 12 19 5v14z"/></svg></button>
+  <button class="ctl main" id="toggle" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="toggle-icon" d="M8 5v14l11-7z"/></svg></button>
+  <button class="ctl" id="next" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM14.5 12 5 19V5z"/></svg></button>
+</footer>
+<div id="notice" role="status"></div>
+</body>
+</html>
