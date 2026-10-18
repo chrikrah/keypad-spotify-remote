@@ -30,8 +30,11 @@ section { margin-bottom: .75rem; }
 .quick img, .quick .ph { width: 4rem; height: 4rem; object-fit: cover; flex: none; background: var(--surface); }
 .quick span {
   font-weight: 700; font-size: 1.125rem; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+  -webkit-box-orient: vertical; overflow: hidden;
 }
+
+.quick span.oneline { display: block; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.quick button { min-width: 0; }
 
 /* Shelves: a half tile peeks past the right edge so a row reads as scrollable */
 .row {

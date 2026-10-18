@@ -86,6 +86,7 @@ function quickGrid(items) {
     if (src) { art.src = src; art.alt = ""; } else art.className = "ph";
     const name = document.createElement("span");
     name.textContent = item.name;
+    if (/\S{15,}/.test(item.name)) name.className = "oneline"; // a long word must not break mid-word
     b.append(art, name);
     b.addEventListener("click", () => play(item.uri));
     grid.append(b);
