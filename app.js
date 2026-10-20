@@ -211,6 +211,7 @@ function followMac() {
     try { now = JSON.parse(JSON.parse(e.data).message); } catch { return; }
     if (now.seal) { openSeal(now.seal); return; }
     if (now.heart) { learnHeart(now.heart); return; }
+    if (now.merged) { showMerged(now.merged, now.at); return; }
     if (!now.station) {
       if (external?.kind === "radio") { external = null; mark(); refresh(); }
       return;
@@ -302,6 +303,33 @@ function learnHeart({ uri, playlist, name }) {
   if (!favIds.includes(playlist)) favIds.push(playlist); // the Mac started this year's playlist
   if (!favPlaylist && (name || "").match(FAVS)?.[1] === YEAR) favPlaylist = { id: playlist }; // no second one on a tap
   playlistItems(playlist).then(set => { set.add(uri); setHeart(); }).catch(() => null);
+}
+
+// --- A merged pull request, played at the same moment as the keypad's animation -------------------------
+
+const MERGED_MS = 30000;
+let mergedTimer = null;
+
+// The topic replays 12 hours to a freshly cast page, so only a merge from the last minute plays
+function showMerged({ repo, number, title }, at) {
+  if (!repo || !Number.isInteger(number) || !(Date.now() / 1000 - at < 60)) return;
+  const box = $("merged");
+  // an identifier like log_to_db() breaks only after "." or "_" or before "(", never inside a word
+  $("merged-title").replaceChildren(...(title || "").split(/(?<=[._])|(?=\()/)
+    .flatMap((part, i) => (i ? [document.createElement("wbr"), part] : [part])));
+  $("merged-repo").textContent = `${repo} · #${number}`;
+  box.classList.remove("play");
+  box.hidden = false;
+  void box.offsetWidth; // restart the animation for a second merge
+  box.classList.add("play");
+  clearTimeout(mergedTimer);
+  mergedTimer = setTimeout(hideMerged, MERGED_MS);
+}
+
+function hideMerged() {
+  clearTimeout(mergedTimer);
+  $("merged").hidden = true;
+  $("merged").classList.remove("play");
 }
 
 // --- Search with an on-screen keyboard (the Hub has none) --------------------------------------------
@@ -431,6 +459,7 @@ $("toggle").addEventListener("click", async () => {
 $("next").addEventListener("click", async () => { await api("/me/player/next", { method: "POST" }); setTimeout(refresh, 600); });
 $("prev").addEventListener("click", async () => { await api("/me/player/previous", { method: "POST" }); setTimeout(refresh, 600); });
 $("heart").addEventListener("click", addHeart);
+$("merged-dismiss").addEventListener("click", hideMerged);
 $("open-search").addEventListener("click", () => openSearch(true));
 $("close-search").addEventListener("click", () => openSearch(false));
 

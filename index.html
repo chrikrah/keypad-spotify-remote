@@ -38,5 +38,22 @@
   <button class="ctl" id="next" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM14.5 12 5 19V5z"/></svg></button>
 </footer>
 <div id="notice" role="status"></div>
+<section id="merged" hidden aria-live="polite" aria-label="Pull request merged">
+  <svg id="merge-glyph" viewBox="0 0 120 140" aria-hidden="true">
+    <circle class="halo" cx="36" cy="45" r="16"/>
+    <path class="m-stem" pathLength="1" d="M36 103V35"/>
+    <path class="m-branch" pathLength="1" d="M81 71H72A36 26 0 0 1 36 45"/>
+    <circle class="m-ring r-bottom" cx="36" cy="114" r="11"/>
+    <circle class="m-ring r-right" cx="92" cy="71" r="11"/>
+    <circle class="m-ring r-top" cx="36" cy="24" r="11"/>
+  </svg>
+  <div id="merged-text">
+    <p id="merged-label">Merged</p>
+    <h2 id="merged-title"></h2>
+    <p id="merged-repo"></p>
+    <button id="merged-dismiss">Dismiss</button>
+  </div>
+  <div id="merged-timer"></div>
+</section>
 </body>
 </html>

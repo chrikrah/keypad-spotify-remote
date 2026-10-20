@@ -146,3 +146,53 @@ footer.idle .ctl { opacity: .4; }
   #np-box, .ctl { width: 3.25rem; height: 3.25rem; }
   #results { grid-template-columns: 1fr; }
 }
+
+/* A merged pull request: the keypad's merge glyph draws itself, then the PR, for 30 s or until Dismiss */
+#merged {
+  --purple: #8250df; --lilac: #d2a8ff;
+  position: fixed; inset: 0; z-index: 4; background: #000; margin: 0;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 3rem; padding: 2rem 3rem;
+}
+#merged[hidden] { display: none; }
+#merge-glyph { width: 11rem; height: auto; overflow: visible; filter: drop-shadow(0 0 .6rem rgb(130 80 223 / .55)); }
+#merge-glyph path { fill: none; stroke: var(--purple); stroke-width: 7; stroke-linecap: butt; stroke-dasharray: 1 2; stroke-dashoffset: 1; }
+#merge-glyph .m-ring { fill: none; stroke: var(--purple); stroke-width: 7; opacity: 0; }
+#merge-glyph .halo { fill: var(--lilac); opacity: 0; filter: blur(6px); }
+#merged.play .r-bottom { animation: m-fade .17s ease-out forwards; }
+#merged.play .m-stem { animation: m-draw .5s .1s ease-in-out forwards; }
+#merged.play .r-right { animation: m-fade .17s .43s ease-out forwards; }
+#merged.play .r-top { animation: m-fade .17s .6s ease-out forwards; }
+#merged.play .m-branch { animation: m-draw .47s .6s ease-in-out forwards; }
+#merged.play .halo { animation: m-swell .3s 1.03s ease-in-out; }
+#merged-text { opacity: 0; transform: translateY(.5rem); }
+#merged.play #merged-text { animation: m-rise .5s 1.2s ease-out forwards; }
+#merged-label { color: var(--lilac); font-size: 1.25rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+#merged-title {
+  font-size: 2.25rem; font-weight: 800; line-height: 1.15; padding: 0; margin: .75rem 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: break-word; text-wrap: pretty;
+}
+#merged-repo { color: var(--muted); font-size: 1.375rem; font-variant-numeric: tabular-nums; }
+#merged-dismiss {
+  margin-top: 2rem; min-height: 3.5rem; padding: 0 2rem; border: 0; border-radius: 1.75rem;
+  background: var(--raised); font-size: 1.25rem; font-weight: 700; cursor: pointer;
+}
+#merged-dismiss:active { background: #3a3a40; }
+/* time left, quietly: a thin line along the bottom that runs out with the 30 s */
+#merged-timer { position: absolute; left: 0; right: 0; bottom: 0; height: .25rem; background: var(--purple); transform-origin: left; opacity: .6; }
+#merged.play #merged-timer { animation: m-time 30s linear forwards; }
+@keyframes m-draw { to { stroke-dashoffset: 0; } }
+@keyframes m-fade { to { opacity: 1; } }
+@keyframes m-swell { 50% { opacity: .45; } }
+@keyframes m-rise { to { opacity: 1; transform: none; } }
+@keyframes m-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (max-width: 40rem) {
+  #merged { grid-template-columns: 1fr; align-content: center; justify-items: center; text-align: center; gap: 2rem; padding: 2rem 1.25rem; }
+  #merged-text { width: 100%; }
+  #merge-glyph { width: 8rem; }
+  #merged-title { font-size: 1.375rem; }
+  #merged-label { font-size: 1.125rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #merged.play * { animation-duration: 1ms !important; animation-delay: 0s !important; }
+  #merged.play #merged-timer { animation: none; }
+}
